@@ -1,132 +1,160 @@
 import streamlit as st
 import numpy as np
 import time
+import math
 
-# ---------------- CONFIG ----------------
-BOARD_SIZE = 20
+# ---------------------------------------
+# CONFIG
+# ---------------------------------------
+GRID = 15
+CELL = 25
+ENEMY_HP = 10
+ENEMY_SPEED = 0.25
+TOWER_DAMAGE = 3
+TOWER_RANGE = 3
+MONEY_START = 50
 
-SKINS = {
-    "เขียว": [0, 255, 0],
-    "น้ำเงิน": [0, 120, 255],
-    "ม่วง": [180, 0, 255],
-    "เหลือง": [255, 220, 0]
-}
+# ---------------------------------------
+# INITIAL STATE
+# ---------------------------------------
+if "towers" not in st.session_state:
+    st.session_state.towers = []
+if "enemies" not in st.session_state:
+    st.session_state.enemies = []
+if "money" not in st.session_state:
+    st.session_state.money = MONEY_START
+if "lives" not in st.session_state:
+    st.session_state.lives = 10
+if "tick" not in st.session_state:
+    st.session_state.tick = 0
 
-BACKGROUNDS = {
-    "ดำ": [0, 0, 0],
-    "เทา": [30, 30, 30],
-    "น้ำเงินเข้ม": [10, 20, 60],
-}
+# ศัตรูเดินตาม path แนวนอน
+PATH = [(i, GRID // 2) for i in range(GRID)]
 
-# ---------------- INITIAL STATE ----------------
-if "snake" not in st.session_state:
-    st.session_state.snake = [(10, 10)]
-    st.session_state.direction = "RIGHT"
-    st.session_state.food = (5, 5)
-    st.session_state.game_over = False
-    st.session_state.score = 0
-    st.session_state.speed = 0.15
-    st.session_state.skin = "เขียว"
-    st.session_state.bg = "ดำ"
+# ---------------------------------------
+# SPAWN ENEMY
+# ---------------------------------------
+def spawn_enemy():
+    st.session_state.enemies.append({
+        "x": 0,
+        "y": GRID//2,
+        "hp": ENEMY_HP,
+        "progress": 0
+    })
 
-# ---------------- GAME LOGIC ----------------
-def place_food():
-    while True:
-        pos = (
-            np.random.randint(0, BOARD_SIZE),
-            np.random.randint(0, BOARD_SIZE)
-        )
-        if pos not in st.session_state.snake:
-            return pos
+# ---------------------------------------
+# MOVE ENEMIES
+# ---------------------------------------
+def move_enemies():
+    for e in st.session_state.enemies:
+        e["progress"] += ENEMY_SPEED
+        e["x"] = int(e["progress"])
 
-def move_snake():
-    if st.session_state.game_over:
-        return
+    # ถ้าหลุดจอ -> ลดชีวิต
+    leak = [e for e in st.session_state.enemies if e["x"] >= GRID]
+    for _ in leak:
+        st.session_state.lives -= 1
 
-    head = st.session_state.snake[0]
-    x, y = head
+    st.session_state.enemies = [e for e in st.session_state.enemies if e["x"] < GRID and e["hp"] > 0]
 
-    if st.session_state.direction == "UP":
-        new_head = (x, y - 1)
-    elif st.session_state.direction == "DOWN":
-        new_head = (x, y + 1)
-    elif st.session_state.direction == "LEFT":
-        new_head = (x - 1, y)
+# ---------------------------------------
+# TOWER ATTACK
+# ---------------------------------------
+def tower_attack():
+    for tx, ty in st.session_state.towers:
+        for e in st.session_state.enemies:
+            dist = math.dist((tx, ty), (e["x"], e["y"]))
+            if dist <= TOWER_RANGE:
+                e["hp"] -= TOWER_DAMAGE
+
+# ---------------------------------------
+# GAME OVER
+# ---------------------------------------
+def reset_game():
+    st.session_state.towers = []
+    st.session_state.enemies = []
+    st.session_state.money = MONEY_START
+    st.session_state.lives = 10
+    st.session_state.tick = 0
+
+# ---------------------------------------
+# UI
+# ---------------------------------------
+st.title("🏰 Tower Defense — Streamlit Edition")
+
+col1, col2 = st.columns([1, 1])
+
+with col1:
+    st.write(f"💰 เงิน: {st.session_state.money}")
+    st.write(f"❤️ ชีวิต: {st.session_state.lives}")
+
+    build = st.button("➕ สร้างป้อม (30💰)")
+    if build and st.session_state.money >= 30:
+        st.session_state.build_mode = True
     else:
-        new_head = (x + 1, y)
-
-    # ชนกำแพงหรือชนตัวเอง -> จบเกม
-    if (
-        new_head[0] < 0 or new_head[0] >= BOARD_SIZE or
-        new_head[1] < 0 or new_head[1] >= BOARD_SIZE or
-        new_head in st.session_state.snake
-    ):
-        st.session_state.game_over = True
-        return
-
-    # กินอาหาร
-    if new_head == st.session_state.food:
-        st.session_state.snake = [new_head] + st.session_state.snake
-        st.session_state.food = place_food()
-        st.session_state.score += 1
-    else:
-        st.session_state.snake = [new_head] + st.session_state.snake[:-1]
-
-# ---------------- UI ----------------
-st.title("🐍 Snake Game — Enhanced Edition")
-
-# Settings UI
-with st.sidebar:
-    st.header("⚙️ ตั้งค่าเกม")
-    st.session_state.speed = st.slider("ความเร็วงู (วินาทีต่อ 1 ก้าว)", 0.05, 0.5, st.session_state.speed)
-    st.session_state.skin = st.selectbox("สกินงู", list(SKINS.keys()))
-    st.session_state.bg = st.selectbox("สีพื้นหลัง", list(BACKGROUNDS.keys()))
+        st.session_state.build_mode = False
 
     if st.button("🔄 เริ่มใหม่"):
-        st.session_state.snake = [(10, 10)]
-        st.session_state.direction = "RIGHT"
-        st.session_state.food = place_food()
-        st.session_state.game_over = False
-        st.session_state.score = 0
+        reset_game()
 
-# แสดงคะแนน
-st.subheader(f"คะแนน: {st.session_state.score}")
+with col2:
+    st.write("🎯 วิธีเล่น:")
+    st.write("- คลิกช่องเพื่อสร้างป้อม (ใช้เงิน 30)")
+    st.write("- ศัตรูเดินจากซ้าย → ขวา")
+    st.write("- ป้อมจะยิงอัตโนมัติ")
+    st.write("- ป้องกันไม่ให้ศัตรุหลุดจอ")
 
-# ---------------- KEYBOARD INPUT (WASD + Arrow Keys) ----------------
-# ใช้ text_input Trick รับคีย์แบบ real-time
-key = st.text_input("กดปุ่มควบคุม (WASD หรือ Arrow keys)", value="", key="key_input")
+# ---------------------------------------
+# DRAW BOARD
+# ---------------------------------------
+board = np.zeros((GRID, GRID, 3), dtype=np.uint8)
 
-key = key.lower()
-if key in ["w", "arrowup"] and st.session_state.direction != "DOWN":
-    st.session_state.direction = "UP"
-elif key in ["s", "arrowdown"] and st.session_state.direction != "UP":
-    st.session_state.direction = "DOWN"
-elif key in ["a", "arrowleft"] and st.session_state.direction != "RIGHT":
-    st.session_state.direction = "LEFT"
-elif key in ["d", "arrowright"] and st.session_state.direction != "LEFT":
-    st.session_state.direction = "RIGHT"
+# พื้นหลัง
+board[:] = [50, 50, 50]
 
-# ---------------- RENDER BOARD ----------------
-bg = BACKGROUNDS[st.session_state.bg]
-skin = SKINS[st.session_state.skin]
+# path
+for x, y in PATH:
+    board[y, x] = [120, 120, 120]
 
-board = np.zeros((BOARD_SIZE, BOARD_SIZE, 3), dtype=np.uint8)
-board[:, :] = bg
+# towers
+for x, y in st.session_state.towers:
+    board[y, x] = [0, 180, 255]
 
-# สีงู
-for (x, y) in st.session_state.snake:
-    board[y, x] = skin
+# enemies
+for e in st.session_state.enemies:
+    x, y = e["x"], e["y"]
+    if 0 <= x < GRID:
+        board[y, x] = [255, 60, 60]
 
-# สีอาหาร
-fx, fy = st.session_state.food
-board[fy, fx] = [255, 0, 0]
+# แสดงแผนที่
+clicked = st.image(board, width=400)
 
-st.image(board, width=400)
+# ---------------------------------------
+# CHECK CLICK (เลือกช่องวางป้อม)
+# ---------------------------------------
+def place_tower():
+    pos = st.session_state.get("clicked_cell", None)
+    if pos and st.session_state.money >= 30:
+        x, y = pos
+        if (x, y) not in PATH and (x, y) not in st.session_state.towers:
+            st.session_state.towers.append((x, y))
+            st.session_state.money -= 30
 
-# ---------------- GAME LOOP ----------------
-if not st.session_state.game_over:
-    move_snake()
-    time.sleep(st.session_state.speed)
+# ---------------------------------------
+# AUTO GAME LOOP
+# ---------------------------------------
+if st.session_state.lives > 0:
+    st.session_state.tick += 1
+
+    # spawn enemy ทุก 20 tick
+    if st.session_state.tick % 20 == 0:
+        spawn_enemy()
+
+    tower_attack()
+    move_enemies()
+
+    time.sleep(0.1)
     st.rerun()
+
 else:
-    st.write("### ❌ Game Over — กดเริ่มใหม่เพื่อเล่นอีกครั้ง!")
+    st.header("💀 Game Over")
